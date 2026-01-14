@@ -80,6 +80,32 @@ def create_task_xml() -> str:
 """
 
 
+def disable_ipv6() -> None:
+    """Disable IPv6 to prevent DNS bypass."""
+    print("Disabling IPv6 to prevent DNS bypass...")
+    subprocess.run(
+        ["powershell", "-Command", "Disable-NetAdapterBinding -Name 'Ethernet' -ComponentID ms_tcpip6"],
+        capture_output=True
+    )
+    subprocess.run(
+        ["powershell", "-Command", "Disable-NetAdapterBinding -Name 'Wi-Fi' -ComponentID ms_tcpip6"],
+        capture_output=True
+    )
+
+
+def enable_ipv6() -> None:
+    """Re-enable IPv6."""
+    print("Re-enabling IPv6...")
+    subprocess.run(
+        ["powershell", "-Command", "Enable-NetAdapterBinding -Name 'Ethernet' -ComponentID ms_tcpip6"],
+        capture_output=True
+    )
+    subprocess.run(
+        ["powershell", "-Command", "Enable-NetAdapterBinding -Name 'Wi-Fi' -ComponentID ms_tcpip6"],
+        capture_output=True
+    )
+
+
 def install() -> bool:
     """Install the Windows Task Scheduler task."""
     if not is_admin():
@@ -91,6 +117,9 @@ def install() -> bool:
         ["schtasks", "/Delete", "/TN", TASK_NAME, "/F"],
         capture_output=True
     )
+
+    # Disable IPv6 to prevent DNS bypass
+    disable_ipv6()
 
     # Create temporary XML file
     project_path = get_project_path()
@@ -159,6 +188,9 @@ def uninstall() -> bool:
         ["netsh", "interface", "ip", "set", "dns", "Ethernet", "dhcp"],
         capture_output=True
     )
+
+    # Re-enable IPv6
+    enable_ipv6()
 
     print("Focus Blocker uninstalled successfully.")
     return True

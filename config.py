@@ -40,10 +40,6 @@ BLOCKED_DOMAINS = [
     # Tumblr
     "tumblr.com",
     "tumblr.co",
-    # Discord
-    "discord.com",
-    "discordapp.com",
-    "discord.gg",
     # Twitch
     "twitch.tv",
     "ttvnw.net",
