@@ -3,34 +3,36 @@
 import sys
 import signal
 
-from dns_server import FocusBlockerDNS
+from dns_server import FocusBlockerDNS, IS_WINDOWS
 from scheduler import get_status_message
 from installer import install, uninstall, get_status
+
+ELEVATION_CMD = "Run as Administrator" if IS_WINDOWS else "sudo python"
 
 
 def print_usage():
     """Print usage information."""
     print(
-        """Focus Blocker - Block distracting websites
+        f"""Focus Blocker - Block distracting websites
 
 Usage:
-    sudo python main.py <command>
+    {ELEVATION_CMD} main.py <command>
 
 Commands:
     start      Start the DNS server (foreground)
-    install    Install as a startup daemon (runs on boot)
+    install    Install as a startup service (runs on boot)
     uninstall  Remove from startup
     status     Show current blocking status
 
 Examples:
     # Install and run at startup
-    sudo python main.py install
+    {ELEVATION_CMD} main.py install
     
     # Check status
-    sudo python main.py status
+    python main.py status
     
     # Remove from startup
-    sudo python main.py uninstall
+    {ELEVATION_CMD} main.py uninstall
 """
     )
 
@@ -40,7 +42,6 @@ def cmd_start():
     server = FocusBlockerDNS()
 
     def signal_handler(signum, frame):
-        print("\nShutting down...")
         server.stop()
         sys.exit(0)
 
@@ -51,7 +52,6 @@ def cmd_start():
         server.start()
     except PermissionError as e:
         print(f"Error: {e}")
-        print("Hint: Run with sudo to bind to port 53")
         sys.exit(1)
     except OSError as e:
         print(f"Error: {e}")
@@ -59,13 +59,13 @@ def cmd_start():
 
 
 def cmd_install():
-    """Install as LaunchDaemon."""
+    """Install as startup service."""
     success = install()
     sys.exit(0 if success else 1)
 
 
 def cmd_uninstall():
-    """Uninstall LaunchDaemon."""
+    """Uninstall startup service."""
     success = uninstall()
     sys.exit(0 if success else 1)
 

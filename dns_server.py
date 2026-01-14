@@ -1,6 +1,7 @@
 """DNS server with blocking capabilities."""
 
 import socket
+import sys
 from typing import Optional
 
 from dnslib import DNSRecord, QTYPE, RR, A, AAAA
@@ -15,6 +16,8 @@ from config import (
     BLOCK_IPV6,
 )
 from scheduler import is_blocking_active
+
+IS_WINDOWS = sys.platform == "win32"
 
 
 class FocusBlockerDNS:
@@ -122,7 +125,8 @@ class FocusBlockerDNS:
         try:
             self.socket.bind((self.host, self.port))
         except PermissionError:
-            raise PermissionError(f"Cannot bind to port {self.port}. Run with sudo.")
+            hint = "Run as Administrator." if IS_WINDOWS else "Run with sudo."
+            raise PermissionError(f"Cannot bind to port {self.port}. {hint}")
         except OSError as e:
             if "Address already in use" in str(e):
                 raise OSError(
