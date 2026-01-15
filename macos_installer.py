@@ -7,6 +7,164 @@ from pathlib import Path
 
 PLIST_NAME = "com.focus.blocker.plist"
 PLIST_PATH = Path(f"/Library/LaunchDaemons/{PLIST_NAME}")
+RESOLVER_DIR = Path("/etc/resolver")
+
+# TLDs for resolver files (covers most websites)
+TLDS = [
+    "com",
+    "net",
+    "org",
+    "io",
+    "co",
+    "app",
+    "dev",
+    "me",
+    "tv",
+    "gg",
+    "edu",
+    "gov",
+    "mil",
+    "info",
+    "biz",
+    "name",
+    "pro",
+    "uk",
+    "de",
+    "fr",
+    "es",
+    "it",
+    "nl",
+    "ru",
+    "cn",
+    "jp",
+    "kr",
+    "au",
+    "ca",
+    "br",
+    "in",
+    "mx",
+    "pl",
+    "se",
+    "no",
+    "fi",
+    "dk",
+    "ch",
+    "at",
+    "be",
+    "pt",
+    "cz",
+    "hu",
+    "ro",
+    "bg",
+    "hr",
+    "sk",
+    "si",
+    "lt",
+    "lv",
+    "ee",
+    "ie",
+    "gr",
+    "il",
+    "ae",
+    "sa",
+    "za",
+    "nz",
+    "ar",
+    "cl",
+    "co",
+    "xyz",
+    "online",
+    "site",
+    "tech",
+    "store",
+    "blog",
+    "cloud",
+    "live",
+    "social",
+    "video",
+    "news",
+    "media",
+    "music",
+    "game",
+    "games",
+]
+
+
+def get_network_services() -> list[str]:
+    """Get all network services (excluding disabled ones)."""
+    result = subprocess.run(
+        ["networksetup", "-listallnetworkservices"],
+        capture_output=True,
+        text=True,
+    )
+    services = []
+    for line in result.stdout.strip().split("\n"):
+        # Skip header line and disabled services (marked with *)
+        if line and not line.startswith("An asterisk") and not line.startswith("*"):
+            services.append(line)
+    return services
+
+
+def set_dns_all_services(dns_server: str) -> None:
+    """Set DNS server for all network services."""
+    services = get_network_services()
+    for service in services:
+        subprocess.run(
+            ["networksetup", "-setdnsservers", service, dns_server],
+            capture_output=True,
+        )
+        print(f"  Configured DNS for: {service}")
+
+
+def setup_resolver_files(dns_server: str) -> None:
+    """Set up /etc/resolver/ files to redirect DNS queries."""
+    RESOLVER_DIR.mkdir(mode=0o755, exist_ok=True)
+
+    for tld in TLDS:
+        resolver_file = RESOLVER_DIR / tld
+        resolver_file.write_text(f"nameserver {dns_server}\n")
+        os.chmod(resolver_file, 0o644)
+        print(f"  Created resolver for: .{tld}")
+
+
+def cleanup_resolver_files() -> None:
+    """Remove /etc/resolver/ files we created."""
+    for tld in TLDS:
+        resolver_file = RESOLVER_DIR / tld
+        if resolver_file.exists():
+            resolver_file.unlink()
+            print(f"  Removed resolver for: .{tld}")
+
+
+def flush_dns_cache() -> None:
+    """Flush DNS cache."""
+    subprocess.run(["dscacheutil", "-flushcache"], capture_output=True)
+    subprocess.run(["killall", "-HUP", "mDNSResponder"], capture_output=True)
+    print("  Flushed DNS cache")
+
+
+def configure_system_dns() -> None:
+    """Configure system-wide DNS using resolver files and network services."""
+    # Method 1: Set up resolver files (persists across network changes)
+    print("  Setting up resolver files...")
+    setup_resolver_files("127.0.0.1")
+
+    # Method 2: Also set network service DNS (for immediate effect)
+    set_dns_all_services("127.0.0.1")
+
+    flush_dns_cache()
+
+
+def reset_system_dns() -> None:
+    """Reset DNS settings to defaults."""
+    # Remove resolver files
+    print("  Cleaning up resolver files...")
+    cleanup_resolver_files()
+
+    # Reset network service DNS
+    set_dns_all_services("Empty")
+
+    flush_dns_cache()
 
 
 def get_python_path() -> str:
@@ -87,7 +245,7 @@ def install() -> bool:
         ["launchctl", "bootout", f"system/{PLIST_NAME.replace('.plist', '')}"],
         capture_output=True,
     )
-    
+
     result = subprocess.run(
         ["launchctl", "bootstrap", "system", str(PLIST_PATH)],
         capture_output=True,
@@ -98,20 +256,13 @@ def install() -> bool:
         print(f"Error bootstrapping service: {result.stderr}")
         return False
 
-    # Configure system DNS to use our local DNS server
+    # Configure system DNS to use our local DNS server for all network services
     print("Configuring system DNS to use Focus Blocker...")
-    dns_result = subprocess.run(
-        ["networksetup", "-setdnsservers", "Wi-Fi", "127.0.0.1"],
-        capture_output=True,
-        text=True,
-    )
-    
-    if dns_result.returncode != 0:
-        print(f"Warning: Could not set DNS automatically: {dns_result.stderr}")
-        print("Please run manually: sudo networksetup -setdnsservers Wi-Fi 127.0.0.1")
-    
-    print("Focus Blocker installed successfully!")
-    print("\nThe DNS server will start automatically on boot.")
+    configure_system_dns()
+
+    print("\nFocus Blocker installed successfully!")
+    print("The DNS server will start automatically on boot.")
+    print("\nDNS settings will be automatically maintained when you switch networks.")
 
     return True
 
@@ -140,11 +291,9 @@ def uninstall() -> bool:
         print(f"Error removing plist: {e}")
         return False
 
-    # Reset DNS settings to default (Empty)
+    # Reset DNS settings to default for all network services
     print("Resetting DNS settings to default...")
-    subprocess.run(
-        ["networksetup", "-setdnsservers", "Wi-Fi", "Empty"], capture_output=True
-    )
+    reset_system_dns()
 
     print("Focus Blocker uninstalled successfully.")
     return True

@@ -25,14 +25,11 @@ Commands:
     status     Show current blocking status
 
 Examples:
-    # Install and run at startup
     {ELEVATION_CMD} main.py install
-    
-    # Check status
-    python main.py status
-    
-    # Remove from startup
     {ELEVATION_CMD} main.py uninstall
+    python main.py status
+
+DNS settings are automatically maintained when switching networks.
 """
     )
 

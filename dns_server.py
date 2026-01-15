@@ -18,6 +18,11 @@ from config import (
 from scheduler import is_blocking_active
 
 IS_WINDOWS = sys.platform == "win32"
+IS_MACOS = sys.platform == "darwin"
+
+# Only import network monitor on macOS
+if IS_MACOS:
+    from network_monitor import NetworkMonitor
 
 
 class FocusBlockerDNS:
@@ -28,6 +33,7 @@ class FocusBlockerDNS:
         self.port = port
         self.socket: Optional[socket.socket] = None
         self.running = False
+        self._network_monitor: Optional["NetworkMonitor"] = None
 
     def is_domain_blocked(self, domain: str) -> bool:
         """
@@ -49,18 +55,37 @@ class FocusBlockerDNS:
 
         return False
 
+    def _get_upstream_dns_servers(self) -> list[str]:
+        """Get list of upstream DNS servers to try, preferring network's original DNS."""
+        servers = []
+        # Try to get original DNS from network monitor (if on macOS)
+        if IS_MACOS:
+            from network_monitor import NetworkMonitor
+
+            if NetworkMonitor.original_upstream_dns:
+                servers.extend(NetworkMonitor.original_upstream_dns)
+        # Always include fallback DNS servers
+        if UPSTREAM_DNS not in servers:
+            servers.append(UPSTREAM_DNS)
+        return servers
+
     def resolve_upstream(self, request: DNSRecord) -> Optional[DNSRecord]:
         """Forward DNS request to upstream server."""
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            sock.settimeout(5)
-            sock.sendto(request.pack(), (UPSTREAM_DNS, UPSTREAM_DNS_PORT))
-            response_data, _ = sock.recvfrom(4096)
-            return DNSRecord.parse(response_data)
-        except Exception:
-            return None
-        finally:
-            sock.close()
+        upstream_servers = self._get_upstream_dns_servers()
+
+        for upstream in upstream_servers:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                sock.settimeout(3)  # Shorter timeout since we have fallbacks
+                sock.sendto(request.pack(), (upstream, UPSTREAM_DNS_PORT))
+                response_data, _ = sock.recvfrom(4096)
+                return DNSRecord.parse(response_data)
+            except Exception:
+                continue
+            finally:
+                sock.close()
+
+        return None
 
     def create_blocked_response(self, request: DNSRecord) -> DNSRecord:
         """
@@ -137,6 +162,14 @@ class FocusBlockerDNS:
 
         self.running = True
 
+        # Start network monitor on macOS to auto-configure DNS on network changes
+        if IS_MACOS:
+            self._network_monitor = NetworkMonitor(
+                dns_server="127.0.0.1",
+                check_interval=15.0,  # Check every 15 seconds (balance between responsiveness and battery)
+            )
+            self._network_monitor.start()
+
         while self.running:
             try:
                 self.socket.settimeout(1.0)
@@ -155,6 +188,12 @@ class FocusBlockerDNS:
     def stop(self):
         """Stop the DNS server."""
         self.running = False
+
+        # Stop network monitor if running
+        if self._network_monitor:
+            self._network_monitor.stop()
+            self._network_monitor = None
+
         if self.socket:
             self.socket.close()
             self.socket = None

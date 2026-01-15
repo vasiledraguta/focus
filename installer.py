@@ -6,10 +6,17 @@ IS_WINDOWS = sys.platform == "win32"
 IS_MACOS = sys.platform == "darwin"
 
 if IS_WINDOWS:
-    from windows_installer import install, uninstall, get_status, is_installed, is_running
+    from windows_installer import (
+        install,
+        uninstall,
+        get_status,
+        is_installed,
+        is_running,
+    )
 elif IS_MACOS:
     from macos_installer import install, uninstall, get_status, is_installed, is_running
 else:
+
     def install() -> bool:
         print(f"Error: Unsupported platform '{sys.platform}'.")
         return False
@@ -26,5 +33,6 @@ else:
 
     def is_running() -> bool:
         return False
+
 
 __all__ = ["install", "uninstall", "get_status", "is_installed", "is_running"]
