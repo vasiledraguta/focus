@@ -66,7 +66,10 @@ def install() -> bool:
     # Stop existing service if running
     if PLIST_PATH.exists():
         print("Stopping existing service...")
-        subprocess.run(["launchctl", "unload", str(PLIST_PATH)], capture_output=True)
+        subprocess.run(
+            ["launchctl", "bootout", f"system/{PLIST_NAME.replace('.plist', '')}"],
+            capture_output=True,
+        )
 
     # Write plist file
     plist_content = create_plist_content()
@@ -78,15 +81,35 @@ def install() -> bool:
         print(f"Error writing plist: {e}")
         return False
 
-    # Load the service
+    # Bootstrap the service (modern launchctl method that survives reboots)
+    # First, try to bootout in case it's already loaded
+    subprocess.run(
+        ["launchctl", "bootout", f"system/{PLIST_NAME.replace('.plist', '')}"],
+        capture_output=True,
+    )
+    
     result = subprocess.run(
-        ["launchctl", "load", str(PLIST_PATH)], capture_output=True, text=True
+        ["launchctl", "bootstrap", "system", str(PLIST_PATH)],
+        capture_output=True,
+        text=True,
     )
 
     if result.returncode != 0:
-        print(f"Error loading service: {result.stderr}")
+        print(f"Error bootstrapping service: {result.stderr}")
         return False
 
+    # Configure system DNS to use our local DNS server
+    print("Configuring system DNS to use Focus Blocker...")
+    dns_result = subprocess.run(
+        ["networksetup", "-setdnsservers", "Wi-Fi", "127.0.0.1"],
+        capture_output=True,
+        text=True,
+    )
+    
+    if dns_result.returncode != 0:
+        print(f"Warning: Could not set DNS automatically: {dns_result.stderr}")
+        print("Please run manually: sudo networksetup -setdnsservers Wi-Fi 127.0.0.1")
+    
     print("Focus Blocker installed successfully!")
     print("\nThe DNS server will start automatically on boot.")
 
@@ -103,9 +126,11 @@ def uninstall() -> bool:
         print("Focus Blocker is not installed.")
         return True
 
-    # Unload the service
-    result = subprocess.run(
-        ["launchctl", "unload", str(PLIST_PATH)], capture_output=True, text=True
+    # Bootout the service (modern launchctl method)
+    subprocess.run(
+        ["launchctl", "bootout", f"system/{PLIST_NAME.replace('.plist', '')}"],
+        capture_output=True,
+        text=True,
     )
 
     # Remove plist file
@@ -133,7 +158,9 @@ def is_installed() -> bool:
 def is_running() -> bool:
     """Check if the Focus Blocker service is running."""
     result = subprocess.run(
-        ["launchctl", "list", "com.focus.blocker"], capture_output=True, text=True
+        ["launchctl", "print", "system/com.focus.blocker"],
+        capture_output=True,
+        text=True,
     )
     return result.returncode == 0
 
